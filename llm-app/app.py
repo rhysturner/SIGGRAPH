@@ -48,20 +48,20 @@ class OllamaChatResponse(TypedDict, total=False):
 
 
 class OllamaClient:
-    """Minimal client for the local Ollama HTTP API."""
+    """Minimal client for the local Ollama HTTP API using `/api/chat`."""
 
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.1") -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
     def chat(self, prompt: str, history: List[Message] | None = None) -> str:
-        """Send a chat request to Ollama combining history + current prompt.
+        """Send a chat request to Ollama combining history + current prompt via `/api/chat`.
 
         :param prompt: The current user message.
         :param history: Optional list of prior messages.
         :return: Assistant reply content.
         """
-        messages_payload = []
+        messages_payload: list[dict[str, str]] = []
 
         if history:
             for m in history:
