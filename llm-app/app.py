@@ -50,7 +50,7 @@ class OllamaChatResponse(TypedDict, total=False):
 class OllamaClient:
     """Minimal client for the local Ollama HTTP API using `/api/chat`."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.1") -> None:
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2") -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
@@ -76,6 +76,7 @@ class OllamaClient:
             "messages": messages_payload,
             "stream": False,
         }
+        print(payload)
 
         response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()
@@ -123,7 +124,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="llama3.1",
+        default="llama3.2",
         help="Ollama model name to use (default: %(default)s).",
     )
     parser.add_argument(
