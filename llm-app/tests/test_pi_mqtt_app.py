@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure the project root is on sys.path so `mqtt` can be imported
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# Ensure the repo root (which now contains `mqtt`) is on sys.path so it can be imported
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # If paho-mqtt is not installed in the environment running tests, provide a
 # minimal stub so that `mqtt.pi_mqtt_app` can be imported without error.
