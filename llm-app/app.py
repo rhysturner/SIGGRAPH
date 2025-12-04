@@ -117,6 +117,10 @@ class OllamaClient:
             "stream": True,
         }
 
+        # Debug: print the exact JSON payload we send to the LLM
+        print("Payload to Ollama:")
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+
         with requests.post(url, json=payload, stream=True, timeout=120) as response:
             response.raise_for_status()
 
