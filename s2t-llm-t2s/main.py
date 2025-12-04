@@ -9,7 +9,10 @@
 from __future__ import annotations
 
 import sys
+import json
+import re
 from pathlib import Path
+from typing import List
 
 import requests
 import speech_recognition as sr
@@ -27,41 +30,47 @@ for p in (S2T_DIR, LLM_DIR, T2S_DIR):
         sys.path.insert(0, str(p))
 
 
+from app import OllamaClient, Message  # type: ignore  # from llm-app/app.py
 from robot_speech import RobotSpeaker  # type: ignore  # from t2s1/robot_speech.py
 
 
-class LlamaServerClient:
-    """Minimal client for local llama.cpp llama-server completion API."""
+def load_system_prompt(base_dir: Path) -> List[Message] | None:
+    """Load a system prompt from `system_prompt.json` if present.
 
-    def __init__(
-        self,
-        base_url: str = "http://127.0.0.1:8080",
-        timeout: float = 60.0,
-    ) -> None:
-        # llama-server runs as a systemd service listening on this port.
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+    Expected format:
+        {"content": "You are a helpful assistant..."}
+    or:
+        {"role": "system", "content": "..."}
+    """
+    path = base_dir / "system_prompt.json"
+    if not path.exists():
+        return None
 
-    def chat(self, prompt: str, history=None):
-        """Yield text chunks from llama-server /completion endpoint.
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: could not load system_prompt.json: {exc}")
+        return None
 
-        Currently returns a single chunk (non-streaming response)
-        to match the generator interface used in main()."""
-        import requests  # local import to avoid circular issues
-
-        payload = {
-            "prompt": prompt,
-            "n_predict": 256,
-        }
-        url = f"{self.base_url}/completion"
-        resp = requests.post(url, json=payload, timeout=self.timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        content = data.get("content")
+    if isinstance(raw, dict):
+        content = raw.get("content")
         if not isinstance(content, str):
-            raise RuntimeError(f"Unexpected response from llama-server: {data}")
-        # Yield a single chunk for compatibility with the streaming loop in main().
-        yield content
+            print("Warning: system_prompt.json missing string 'content' field")
+            return None
+        role = raw.get("role") or "system"
+        return [Message(role=role, content=content)]
+
+    print("Warning: system_prompt.json must be a JSON object")
+    return None
+
+
+def strip_think_blocks(text: str) -> str:
+    """Remove <think>...</think> or <thinking>...</thinking> sections from the model output."""
+    # Handle both <think> and <thinking> tags just in case
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+    return text.strip()
 
 
 def listen_once(recognizer: sr.Recognizer) -> str | None:
@@ -73,10 +82,14 @@ def listen_once(recognizer: sr.Recognizer) -> str | None:
     with sr.Microphone() as source:
         print("Calibrating for ambient noise... please stay quiet.")
         recognizer.adjust_for_ambient_noise(source, duration=1)
-        print("Calibration complete. Start speaking.\n")
+        print("Calibration complete. Start speaking. You can talk for a while and pause briefly.\\n")
 
-        print("Listening...")
-        audio = recognizer.listen(source)
+        # Be more tolerant of pauses so you don't get cut off too quickly
+        recognizer.pause_threshold = 1.8  # seconds of silence before considering phrase complete
+        recognizer.non_speaking_duration = 0.8
+
+        print("Listening (up to ~20 seconds)...")
+        audio = recognizer.listen(source, timeout=None, phrase_time_limit=20)
         print("Recognizing...")
 
     try:
@@ -96,7 +109,10 @@ def main() -> None:
 
     # Motors disabled by default for desktop development; set True on Pi.
     robot = RobotSpeaker(motor_enabled=False)
-    client = LlamaServerClient()  # uses local llama-server (GPU-accelerated) on port 8080
+    client = OllamaClient()  # uses default base_url/model from llm-app
+
+    # Optional system prompt loaded from JSON
+    system_messages = load_system_prompt(BASE_DIR)
 
     try:
         while True:
@@ -117,23 +133,17 @@ def main() -> None:
             print("Sending to LLM (streaming)...")
             reply_chunks: list[str] = []
 
-            try:
-                for chunk in client.chat(prompt=text, history=None):
-                    print(chunk, end="", flush=True)
-                    reply_chunks.append(chunk)
-            except requests.exceptions.ReadTimeout:
-                print("\nTimed out waiting for LLM reply; it may still be loading or is too slow. Please try again or use a smaller model.")
-                continue
-            except requests.exceptions.RequestException as e:
-                print(f"\nHTTP error while talking to LLM: {e}")
-                continue
+            for chunk in client.chat_stream(prompt=text, history=system_messages):
+                reply_chunks.append(chunk)
 
-            print()  # newline after streamed text
-            reply = "".join(reply_chunks)
+            full_reply = "".join(reply_chunks)
 
-            # Speak full reply once streaming is finished
+            # Remove <think>/<thinking> sections for both display and speech
+            cleaned_reply = strip_think_blocks(full_reply)
+
+            print(cleaned_reply)
             print("Speaking reply...")
-            robot.speak(reply)
+            robot.speak(cleaned_reply)
 
     finally:
         robot.cleanup()

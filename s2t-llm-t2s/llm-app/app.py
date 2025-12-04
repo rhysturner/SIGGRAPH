@@ -55,8 +55,30 @@ class OllamaClient:
         self.model = model
         self.timeout = timeout
 
-    def chat(self, prompt: str, history: List[Message] | None = None) -> str:
-        """Send a chat request to Ollama combining history + current prompt via `/api/chat`.
+    def chat(self, prompt: str, history: list[Message] | None = None) -> str:
+        full_history = self._add_history(prompt, history)
+        print("Sending to LLM (non-streaming)...")
+        r = requests.post(f"{self.base_url}/api/chat", json=full_history, stream=False)
+        r.raise_for_status()
+        reply = r.json()["message"]["content"]
+        print(reply)
+        return reply
+
+    def chat_stream(self, prompt: str, history: list[Message] | None = None):
+        full_history = self._add_history(prompt, history)
+        r = requests.post(f"{self.base_url}/api/chat", json=full_history, stream=True)
+        r.raise_for_status()
+
+        for chunk in r.iter_lines():
+            if chunk:
+                try:
+                    json_chunk = json.loads(chunk.decode('utf-8'))
+                    yield json_chunk["message"]["content"]
+                except json.JSONDecodeError:
+                    pass
+
+    def _add_history(self, prompt: str, history: list[Message] | None) -> dict:
+        """Combines existing history with current prompt into the Ollama messages payload format.
 
         :param prompt: The current user message.
         :param history: Optional list of prior messages.
@@ -71,25 +93,13 @@ class OllamaClient:
         # Current user prompt is always the last message
         messages_payload.append({"role": "user", "content": prompt})
 
-        url = f"{self.base_url}/api/chat"
         payload = {
             "model": self.model,
             "messages": messages_payload,
             "stream": False,
+            "nothink": True,
         }
-        print(payload)
-
-        response = requests.post(url, json=payload, timeout=self.timeout)
-        response.raise_for_status()
-
-        data: OllamaChatResponse = response.json()
-        message = data.get("message")
-        if not message:
-            raise RuntimeError(f"Unexpected response shape from Ollama: {data}")
-
-        return message["content"]
-
-
+        return payload
 def load_history_from_json(path: str) -> List[Message]:
     """Load conversation history from a JSON file.
 
