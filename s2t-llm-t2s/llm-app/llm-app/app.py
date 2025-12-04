@@ -21,7 +21,7 @@ Where `history.json` looks like:
 import argparse
 import json
 from dataclasses import dataclass
-from typing import Generator, List, Literal, TypedDict
+from typing import List, Literal, TypedDict
 
 import requests
 
@@ -47,15 +47,6 @@ class OllamaChatResponse(TypedDict, total=False):
     done: bool
 
 
-class OllamaChatStreamChunk(TypedDict, total=False):
-    """Single streamed chunk from Ollama `/api/chat` with stream=true."""
-
-    model: str
-    created_at: str
-    message: OllamaChatResponseMessage
-    done: bool
-
-
 class OllamaClient:
     """Minimal client for the local Ollama HTTP API using `/api/chat`."""
 
@@ -64,7 +55,7 @@ class OllamaClient:
         self.model = model
 
     def chat(self, prompt: str, history: List[Message] | None = None) -> str:
-        """Send a non-streaming chat request to Ollama via `/api/chat`.
+        """Send a chat request to Ollama combining history + current prompt via `/api/chat`.
 
         :param prompt: The current user message.
         :param history: Optional list of prior messages.
@@ -85,6 +76,7 @@ class OllamaClient:
             "messages": messages_payload,
             "stream": False,
         }
+        print(payload)
 
         response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()
@@ -95,50 +87,6 @@ class OllamaClient:
             raise RuntimeError(f"Unexpected response shape from Ollama: {data}")
 
         return message["content"]
-
-    def chat_stream(self, prompt: str, history: List[Message] | None = None) -> Generator[str, None, None]:
-        """Stream a chat response from Ollama, yielding text chunks as they arrive.
-
-        This uses `/api/chat` with ``stream=true`` and yields each non-empty
-        ``message.content`` piece so callers can render incrementally.
-        """
-        messages_payload: list[dict[str, str]] = []
-
-        if history:
-            for m in history:
-                messages_payload.append({"role": m.role, "content": m.content})
-
-        messages_payload.append({"role": "user", "content": prompt})
-
-        url = f"{self.base_url}/api/chat"
-        payload = {
-            "model": self.model,
-            "messages": messages_payload,
-            "stream": True,
-        }
-
-        with requests.post(url, json=payload, stream=True, timeout=120) as response:
-            response.raise_for_status()
-
-            for line in response.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
-
-                try:
-                    data: OllamaChatStreamChunk = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                message = data.get("message")
-                if not message:
-                    continue
-
-                chunk = message.get("content") or ""
-                if chunk:
-                    yield chunk
-
-                if data.get("done"):
-                    break
 
 
 def load_history_from_json(path: str) -> List[Message]:

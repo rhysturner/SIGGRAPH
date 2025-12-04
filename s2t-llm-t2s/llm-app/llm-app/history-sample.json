@@ -1,0 +1,18 @@
+[
+  {
+    "role": "system",
+    "content": "You are a helpful assistant specialized in computer graphics and rendering."
+  },
+  {
+    "role": "user",
+    "content": "Hi, can you help me understand the difference between rasterization and ray tracing?"
+  },
+  {
+    "role": "assistant",
+    "content": "Sure! At a high level, rasterization converts 3D geometry into 2D pixels very quickly, while ray tracing simulates rays of light bouncing through a scene for more realistic lighting and shadows."
+  },
+  {
+    "role": "user",
+    "content": "Great, can you give a short bullet list of key differences?"
+  }
+]
