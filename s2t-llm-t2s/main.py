@@ -27,8 +27,41 @@ for p in (S2T_DIR, LLM_DIR, T2S_DIR):
         sys.path.insert(0, str(p))
 
 
-from app import OllamaClient  # type: ignore  # from llm-app/app.py
 from robot_speech import RobotSpeaker  # type: ignore  # from t2s1/robot_speech.py
+
+
+class LlamaServerClient:
+    """Minimal client for local llama.cpp llama-server completion API."""
+
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:8080",
+        timeout: float = 60.0,
+    ) -> None:
+        # llama-server runs as a systemd service listening on this port.
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def chat(self, prompt: str, history=None):
+        """Yield text chunks from llama-server /completion endpoint.
+
+        Currently returns a single chunk (non-streaming response)
+        to match the generator interface used in main()."""
+        import requests  # local import to avoid circular issues
+
+        payload = {
+            "prompt": prompt,
+            "n_predict": 256,
+        }
+        url = f"{self.base_url}/completion"
+        resp = requests.post(url, json=payload, timeout=self.timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get("content")
+        if not isinstance(content, str):
+            raise RuntimeError(f"Unexpected response from llama-server: {data}")
+        # Yield a single chunk for compatibility with the streaming loop in main().
+        yield content
 
 
 def listen_once(recognizer: sr.Recognizer) -> str | None:
@@ -63,7 +96,7 @@ def main() -> None:
 
     # Motors disabled by default for desktop development; set True on Pi.
     robot = RobotSpeaker(motor_enabled=False)
-    client = OllamaClient()  # uses default base_url/model from llm-app
+    client = LlamaServerClient()  # uses local llama-server (GPU-accelerated) on port 8080
 
     try:
         while True:
