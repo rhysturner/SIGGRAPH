@@ -50,9 +50,10 @@ class OllamaChatResponse(TypedDict, total=False):
 class OllamaClient:
     """Minimal client for the local Ollama HTTP API using `/api/chat`."""
 
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "deepseek-r1:7b") -> None:
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "deepseek-r1:7b", timeout: float = 300.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.timeout = timeout
 
     def chat(self, prompt: str, history: List[Message] | None = None) -> str:
         """Send a chat request to Ollama combining history + current prompt via `/api/chat`.
@@ -78,7 +79,7 @@ class OllamaClient:
         }
         print(payload)
 
-        response = requests.post(url, json=payload, timeout=120)
+        response = requests.post(url, json=payload, timeout=self.timeout)
         response.raise_for_status()
 
         data: OllamaChatResponse = response.json()
@@ -132,6 +133,12 @@ def parse_args() -> argparse.Namespace:
         default="http://localhost:11434",
         help="Base URL of the Ollama server (default: %(default)s).",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        help="Request timeout in seconds when waiting for the model reply (default: %(default)s).",
+    )
     return parser.parse_args()
 
 
@@ -142,7 +149,7 @@ def main() -> None:
     if args.history:
         history = load_history_from_json(args.history)
 
-    client = OllamaClient(base_url=args.base_url, model=args.model)
+    client = OllamaClient(base_url=args.base_url, model=args.model, timeout=args.timeout)
     try:
         reply = client.chat(prompt=args.prompt, history=history)
     except requests.RequestException as e:

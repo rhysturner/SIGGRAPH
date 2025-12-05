@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import requests
 import speech_recognition as sr
 
 
@@ -83,9 +84,16 @@ def main() -> None:
             print("Sending to LLM (streaming)...")
             reply_chunks: list[str] = []
 
-            for chunk in client.chat(prompt=text, history=None):
-                print(chunk, end="", flush=True)
-                reply_chunks.append(chunk)
+            try:
+                for chunk in client.chat(prompt=text, history=None):
+                    print(chunk, end="", flush=True)
+                    reply_chunks.append(chunk)
+            except requests.exceptions.ReadTimeout:
+                print("\nTimed out waiting for LLM reply; it may still be loading or is too slow. Please try again or use a smaller model.")
+                continue
+            except requests.exceptions.RequestException as e:
+                print(f"\nHTTP error while talking to LLM: {e}")
+                continue
 
             print()  # newline after streamed text
             reply = "".join(reply_chunks)
