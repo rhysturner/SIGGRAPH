@@ -18,7 +18,7 @@ class MotorController:
     def __init__(self, enabled: bool = True) -> None:
         # Mouth: your chosen pins for ULN2003 IN1..IN4
         self.mouth_stepper = Stepper28BYJ(
-            pins=[17, 27, 22, 23],  # IN1..IN4 -> GPIO17,27,22,23
+            pins=[18, 23, 24, 25],  # IN1..IN4 -> GPIO17,27,22,23
             step_delay=0.003,
             enabled=enabled,
             name="mouth",

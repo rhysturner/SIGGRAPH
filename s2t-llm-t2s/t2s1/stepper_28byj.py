@@ -1,30 +1,34 @@
-import time
 import threading
+import time
 from typing import List, Optional
 
 try:
-    import RPi.GPIO as GPIO
-except ImportError:
-    GPIO = None  # Allows import on non-Pi systems
+    # gpiozero will, in turn, use a pin factory such as RPi.GPIO, lgpio, or pigpio
+    from gpiozero import DigitalOutputDevice
+except ImportError:  # pragma: no cover - dependency issue
+    DigitalOutputDevice = None  # type: ignore
 
 
 class Stepper28BYJ:
-    """Controller for a 28BYJ-48 stepper motor driven by ULN2003 on Raspberry Pi.
+    """Control a 28BYJ-48 stepper motor using a ULN2003 driver board.
 
-    - Uses BCM pin numbering.
-    - Pins must be given in IN1..IN4 order.
+    This implementation uses the gpiozero library. It creates four
+    ``DigitalOutputDevice`` instances (one per IN1..IN4 input on the
+    ULN2003 board) and drives them with a half-step sequence.
+
+    Pins are specified as BCM GPIO numbers in IN1..IN4 order.
     """
 
-    # Half-step sequence for 28BYJ-48 + ULN2003
+    # Half-step sequence for 28BYJ-48 (8 micro-steps per full step pattern)
     _HALF_STEP_SEQUENCE: List[List[int]] = [
-        [1, 0, 0, 0],  # step 0
-        [1, 1, 0, 0],  # step 1
-        [0, 1, 0, 0],  # step 2
-        [0, 1, 1, 0],  # step 3
-        [0, 0, 1, 0],  # step 4
-        [0, 0, 1, 1],  # step 5
-        [0, 0, 0, 1],  # step 6
-        [1, 0, 0, 1],  # step 7
+        [1, 0, 0, 0],
+        [1, 1, 0, 0],
+        [0, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 1, 0],
+        [0, 0, 1, 1],
+        [0, 0, 0, 1],
+        [1, 0, 0, 1],
     ]
 
     def __init__(
@@ -34,13 +38,6 @@ class Stepper28BYJ:
         enabled: bool = True,
         name: str = "stepper",
     ) -> None:
-        """Initialize the stepper driver.
-
-        :param pins:       List of 4 BCM GPIO pins [IN1, IN2, IN3, IN4].
-        :param step_delay: Delay between half-steps (seconds). Larger = slower.
-        :param enabled:    False => simulation only, no GPIO calls.
-        :param name:       Identifier used in logs (useful with multiple motors).
-        """
         if len(pins) != 4:
             raise ValueError("pins must be a list of 4 BCM GPIO pins in IN1..IN4 order")
 
@@ -49,88 +46,118 @@ class Stepper28BYJ:
         self.enabled = enabled
         self.name = name
 
+        self._lock = threading.Lock()
         self._continuous = False
         self._thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
 
-        if self.enabled:
-            if GPIO is None:
-                raise RuntimeError(
-                    "RPi.GPIO is not available. Install it and run on a Raspberry Pi "
-                    "or set enabled=False for simulation."
-                )
+        # gpiozero DigitalOutputDevice instances, one per pin
+        self._devices: List[DigitalOutputDevice] = []
 
-            GPIO.setmode(GPIO.BCM)
-            for pin in self.pins:
-                GPIO.setup(pin, GPIO.OUT)
-                GPIO.output(pin, GPIO.LOW)
-        else:
+        if not self.enabled:
             print(f"[{self.name}] (sim) initialized on pins {self.pins}")
+            return
 
-    # --- Low-level helpers -------------------------------------------------
+        if DigitalOutputDevice is None:
+            raise RuntimeError(
+                "gpiozero is not available. Install it and run on a Raspberry Pi "
+                "or set enabled=False for simulation."
+            )
+
+        # Initialize each output device low
+        for pin in self.pins:
+            dev = DigitalOutputDevice(pin=pin, active_high=True, initial_value=False)
+            self._devices.append(dev)
+
+        print(f"[{self.name}] initialized on pins {self.pins} (gpiozero)")
+
+    # ------------------------------------------------------------------
+    # Low-level helpers
+    # ------------------------------------------------------------------
+    def _write_index(self, index: int, value: int) -> None:
+        if not self.enabled or not self._devices:
+            return
+        dev = self._devices[index]
+        if value:
+            dev.on()
+        else:
+            dev.off()
 
     def _set_step(self, bits: List[int]) -> None:
         if not self.enabled:
-            # Simulation: no GPIO calls
+            # Simulation: just log if desired
+            # print(f"[{self.name}] (sim) step bits={bits}")
             return
-
-        for pin, value in zip(self.pins, bits):
-            GPIO.output(pin, GPIO.HIGH if value else GPIO.LOW)
+        for i, value in enumerate(bits):
+            self._write_index(i, value)
 
     def _off(self) -> None:
+        # Turn off all coils
         if not self.enabled:
             return
-        for pin in self.pins:
-            GPIO.output(pin, GPIO.LOW)
+        for dev in self._devices:
+            dev.off()
 
-    # --- Basic stepping ----------------------------------------------------
-
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
     def step(self, steps: int, direction: int = 1) -> None:
-        """Move the motor by a fixed number of half-steps.
+        """Move a given number of half-steps.
 
-        :param steps:     Number of half-steps to move (can be negative).
-        :param direction: +1 for forward, -1 for reverse. If steps < 0, direction is inverted.
+        Positive `steps` use the provided `direction`; negative `steps` invert it.
         """
+
         if steps == 0:
             return
 
+        if not self.enabled:
+            print(f"[{self.name}] (sim) step {steps} dir={direction}")
+            # Still sleep to simulate timing so callers behave similarly
+            time.sleep(abs(steps) * self.step_delay)
+            return
+
+        actual_dir = 1 if direction >= 0 else -1
         if steps < 0:
             steps = -steps
-            direction = -direction
+            actual_dir *= -1
 
-        seq = self._HALF_STEP_SEQUENCE
-        idx = 0 if direction > 0 else len(seq) - 1
+        sequence = self._HALF_STEP_SEQUENCE
+        seq_len = len(sequence)
 
-        for _ in range(steps):
-            self._set_step(seq[idx])
+        for i in range(steps):
+            idx = (i * actual_dir) % seq_len
+            self._set_step(sequence[idx])
             time.sleep(self.step_delay)
-            idx = (idx + direction) % len(seq)
 
         self._off()
 
-    # --- Continuous motion (background thread) -----------------------------
-
     def _continuous_loop(self, direction: int) -> None:
-        seq = self._HALF_STEP_SEQUENCE
-        idx = 0 if direction > 0 else len(seq) - 1
+        if not self.enabled:
+            # Simulation: spin with sleeps only
+            while True:
+                with self._lock:
+                    if not self._continuous:
+                        break
+                time.sleep(self.step_delay)
+            return
 
+        sequence = self._HALF_STEP_SEQUENCE
+        seq_len = len(sequence)
+
+        i = 0
         try:
             while True:
                 with self._lock:
                     if not self._continuous:
                         break
 
-                self._set_step(seq[idx])
+                idx = (i * direction) % seq_len
+                self._set_step(sequence[idx])
                 time.sleep(self.step_delay)
-                idx = (idx + direction) % len(seq)
+                i += 1
         finally:
             self._off()
 
     def start_continuous(self, direction: int = 1) -> None:
-        """Start continuous stepping in a background thread.
-
-        :param direction: +1 forward, -1 reverse
-        """
         with self._lock:
             if self._continuous:
                 return
@@ -138,17 +165,16 @@ class Stepper28BYJ:
 
         if not self.enabled:
             print(f"[{self.name}] (sim) start_continuous dir={direction}")
-            return
+            # No thread needed; but to keep API consistent, we still start one
 
         self._thread = threading.Thread(
             target=self._continuous_loop,
-            args=(direction,),
+            args=(1 if direction >= 0 else -1,),
             daemon=True,
         )
         self._thread.start()
 
     def stop_continuous(self) -> None:
-        """Stop continuous motion if running."""
         with self._lock:
             if not self._continuous:
                 return
@@ -156,21 +182,21 @@ class Stepper28BYJ:
 
         if not self.enabled:
             print(f"[{self.name}] (sim) stop_continuous")
-            return
 
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             self._thread = None
 
-        self._off()
-
-    # --- Cleanup -----------------------------------------------------------
-
     def cleanup(self) -> None:
-        """Turn off coils.
+        """Stop motion and release GPIO resources."""
 
-        Does NOT call GPIO.cleanup() so multiple steppers can coexist.
-        Call GPIO.cleanup() once in your top-level on exit.
-        """
         self.stop_continuous()
         self._off()
+
+        # Close gpiozero devices
+        for dev in self._devices:
+            try:
+                dev.close()
+            except Exception:
+                pass
+        self._devices.clear()

@@ -26,7 +26,7 @@ sudo apt-get update
 sudo apt-get install mpg123
 
 # Python dependencies
-pip install gtts RPi.GPIO
+pip install gtts gpiozero rpi-lgpio
 ```
 
 ## Project Structure
@@ -64,6 +64,26 @@ High-level abstraction for controlling multiple stepper motors. Manages mouth mo
 
 ### `stepper_28byj.py`
 Low-level driver for 28BYJ-48 stepper motors using half-step sequence. Supports both discrete stepping and continuous motion in a background thread.
+
+
+### Stepper motor (gpiozero)
+
+This project now uses [gpiozero](https://gpiozero.readthedocs.io/) to drive the 28BYJ-48 stepper motor via a ULN2003 board.
+
+The low-level driver is `stepper_28byj.py`, which wraps four `DigitalOutputDevice`s and exposes a simple API:
+
+```python
+from stepper_28byj import Stepper28BYJ
+
+stepper = Stepper28BYJ(pins=[14, 15, 18, 23], step_delay=0.003, enabled=True, name="my_stepper")
+stepper.step(steps=200, direction=1)  # move 200 half-steps forward
+stepper.start_continuous(direction=1) # start continuous rotation
+# ... do other work ...
+stepper.stop_continuous()
+stepper.cleanup()
+```
+
+See `simple_motor_app.py` for a minimal runnable example using BCM pins 14, 15, 18, and 23.
 
 ## Usage
 
