@@ -95,7 +95,7 @@ def main() -> None:
     recognizer = sr.Recognizer()
 
     # Motors disabled by default for desktop development; set True on Pi.
-    robot = RobotSpeaker(motor_enabled=False)
+    robot = RobotSpeaker(motor_enabled=True)
     client = LlamaServerClient()  # uses local llama-server (GPU-accelerated) on port 8080
 
     try:
