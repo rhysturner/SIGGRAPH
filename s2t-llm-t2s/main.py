@@ -108,11 +108,8 @@ def main() -> None:
     recognizer = sr.Recognizer()
 
     # Motors disabled by default for desktop development; set True on Pi.
-    robot = RobotSpeaker(motor_enabled=False)
-    client = OllamaClient()  # uses default base_url/model from llm-app
-
-    # Optional system prompt loaded from JSON
-    system_messages = load_system_prompt(BASE_DIR)
+    robot = RobotSpeaker(motor_enabled=True)
+    client = LlamaServerClient()  # uses local llama-server (GPU-accelerated) on port 8080
 
     try:
         while True:

@@ -1,0 +1,4 @@
+1765738013: mosquitto version 2.0.21 starting
+1765738013: Config loaded from mosquitto.dev.conf.
+1765738013: Opening ipv4 listen socket on port 1883.
+1765738013: Error: Address already in use

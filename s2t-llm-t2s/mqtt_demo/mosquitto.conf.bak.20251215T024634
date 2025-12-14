@@ -1,0 +1,10 @@
+# Local dev broker config
+listener 1883
+protocol mqtt
+
+# WebSockets for browser clients
+listener 9001
+protocol websockets
+
+# DEV ONLY (no auth)
+allow_anonymous true

@@ -18,7 +18,7 @@ class MotorController:
     def __init__(self, enabled: bool = True) -> None:
         # Mouth: your chosen pins for ULN2003 IN1..IN4
         self.mouth_stepper = Stepper28BYJ(
-            pins=[17, 27, 22, 23],  # IN1..IN4 -> GPIO17,27,22,23
+            pins=[18, 23, 24, 25],  # IN1..IN4 -> GPIO17,27,22,23
             step_delay=0.003,
             enabled=enabled,
             name="mouth",
@@ -27,15 +27,16 @@ class MotorController:
         # Example second stepper; adjust pins to your wiring when you add it.
         # If you don't have a second motor yet, you can ignore head_stepper usages.
         self.head_stepper: Optional[Stepper28BYJ] = Stepper28BYJ(
-            pins=[5, 6, 13, 19],   # example BCM pins; change to match your wiring
-            step_delay=0.004,
+            pins=[6, 13, 19, 26],  # IN1..IN4 -> GPIO6,13,19,26   # example BCM pins; change to match your wiring
+            step_delay=0.003,
             enabled=enabled,
             name="head",
         )
 
     def start_talking_motion(self) -> None:
         """Start mouth motion to accompany speech."""
-        self.mouth_stepper.start_continuous(direction=1)
+        # Alternate ~30° forward/back while the robot is talking
+        self.mouth_stepper.start_oscillating(swing_degrees=30.0, steps_per_rev=4096, start_direction=1)
 
     def stop_talking_motion(self) -> None:
         """Stop mouth motion."""
