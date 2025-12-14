@@ -108,6 +108,68 @@ class Stepper28BYJ:
 
         self._off()
 
+    @staticmethod
+    def degrees_to_steps(degrees: float, steps_per_rev: int = 4096) -> int:
+        """Convert an output-shaft angle (degrees) to half-steps.
+
+        For a 28BYJ-48 in half-step mode, a common value is ~4096 half-steps per
+        output-shaft revolution (gearbox included).
+        """
+        return int(round(abs(degrees) * steps_per_rev / 360.0))
+
+    def _oscillate_loop(self, swing_steps: int, start_direction: int) -> None:
+        seq = self._HALF_STEP_SEQUENCE
+        direction = 1 if start_direction >= 0 else -1
+        idx = 0 if direction > 0 else len(seq) - 1
+        steps_taken = 0
+
+        try:
+            while True:
+                with self._lock:
+                    if not self._continuous:
+                        break
+
+                self._set_step(seq[idx])
+                time.sleep(self.step_delay)
+
+                idx = (idx + direction) % len(seq)
+                steps_taken += 1
+
+                if steps_taken >= swing_steps:
+                    steps_taken = 0
+                    direction = -direction
+        finally:
+            self._off()
+
+    def start_oscillating(
+        self,
+        swing_degrees: float = 30.0,
+        steps_per_rev: int = 4096,
+        start_direction: int = 1,
+    ) -> None:
+        """Start alternating motion: +swing_degrees then -swing_degrees, repeating."""
+        swing_steps = self.degrees_to_steps(swing_degrees, steps_per_rev=steps_per_rev)
+        if swing_steps <= 0:
+            return
+
+        with self._lock:
+            if self._continuous:
+                return
+            self._continuous = True
+
+        if not self.enabled:
+            print(
+                f"[{self.name}] (sim) start_oscillating degrees={swing_degrees} steps={swing_steps} dir={start_direction}"
+            )
+            return
+
+        self._thread = threading.Thread(
+            target=self._oscillate_loop,
+            args=(swing_steps, 1 if start_direction >= 0 else -1),
+            daemon=True,
+        )
+        self._thread.start()
+
     # --- Continuous motion (background thread) -----------------------------
 
     def _continuous_loop(self, direction: int) -> None:

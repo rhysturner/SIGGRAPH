@@ -35,7 +35,8 @@ class MotorController:
 
     def start_talking_motion(self) -> None:
         """Start mouth motion to accompany speech."""
-        self.mouth_stepper.start_continuous(direction=1)
+        # Alternate ~30° forward/back while the robot is talking
+        self.mouth_stepper.start_oscillating(swing_degrees=30.0, steps_per_rev=4096, start_direction=1)
 
     def stop_talking_motion(self) -> None:
         """Stop mouth motion."""
