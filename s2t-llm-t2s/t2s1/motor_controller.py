@@ -27,8 +27,8 @@ class MotorController:
         # Example second stepper; adjust pins to your wiring when you add it.
         # If you don't have a second motor yet, you can ignore head_stepper usages.
         self.head_stepper: Optional[Stepper28BYJ] = Stepper28BYJ(
-            pins=[5, 6, 13, 19],   # example BCM pins; change to match your wiring
-            step_delay=0.004,
+            pins=[6, 13, 19, 26],  # IN1..IN4 -> GPIO6,13,19,26   # example BCM pins; change to match your wiring
+            step_delay=0.003,
             enabled=enabled,
             name="head",
         )
