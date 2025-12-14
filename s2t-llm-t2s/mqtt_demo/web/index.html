@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LLM text via MQTT</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; }
+      #box { padding: 16px; border: 1px solid #ccc; border-radius: 8px; max-width: 900px; }
+      #status { color: #555; margin-bottom: 12px; }
+      #text { font-size: 20px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="box">
+      <div id="status">Connecting…</div>
+      <div id="text"></div>
+    </div>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+      const statusEl = document.getElementById("status");
+      const textEl = document.getElementById("text");
+
+      // If the broker runs on a different machine, replace localhost with its IP/hostname.
+      const wsUrl = "ws://localhost:9001";
+      const topic = "llm/text";
+
+      const client = mqtt.connect(wsUrl);
+
+      client.on("connect", () => {
+        statusEl.textContent = "Connected. Subscribing to " + topic + "…";
+        client.subscribe(topic, (err) => {
+          statusEl.textContent = err ? ("Subscribe error: " + err) : ("Subscribed: " + topic);
+        });
+      });
+
+      client.on("message", (t, msg) => {
+        const s = msg.toString();
+        try {
+          const data = JSON.parse(s);
+          textEl.textContent = (data && data.text) ? data.text : s;
+        } catch {
+          textEl.textContent = s;
+        }
+      });
+
+      client.on("error", (e) => statusEl.textContent = "Error: " + e.message);
+      client.on("close", () => statusEl.textContent = "Disconnected");
+    </script>
+  </body>
+</html>
