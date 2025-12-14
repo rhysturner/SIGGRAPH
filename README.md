@@ -18,22 +18,28 @@ The Lafufu Twin system consists of multiple components that work together to cre
 SIGGRAPH/
 ├── LafufuTwins/          # Main project directory
 │   └── main.py           # Entry point (placeholder)
-├── llm-app/              # Local Ollama chat client
+├── s2t-llm-t2s/          # End-to-end orchestrator (S2T -> LLM -> T2S)
+│   ├── main.py           # Orchestrator wiring s2t1 + llm-app + t2s1
+│   ├── s2t1/             # Vendored copy of the S2T demo (for the orchestrator)
+│   ├── llm-app/          # Vendored copy of the Ollama client (for the orchestrator)
+│   ├── t2s1/             # Vendored copy of the T2S module (for the orchestrator)
+│   └── mqtt_demo/        # Minimal demo: publish LLM text -> webpage via MQTT
+├── llm-app/              # Local Ollama chat client (standalone)
 │   ├── app.py            # CLI tool for interacting with Ollama
 │   ├── requirements.txt  # Python dependencies
 │   └── README.md         # Detailed documentation
-├── s2t1/                 # Speech-to-Text module
+├── s2t1/                 # Speech-to-Text module (standalone)
 │   ├── app.py            # Online STT (Google Web Speech API)
 │   ├── offline_app.py    # Offline STT (Whisper)
 │   ├── requirements.txt  # Python dependencies
 │   └── README.md         # Detailed documentation
-├── t2s1/                 # Text-to-Speech module
+├── t2s1/                 # Text-to-Speech module (standalone)
 │   ├── robot_speech.py   # Main robot speech coordinator
 │   ├── tts_service.py    # Google TTS integration
 │   ├── audio_player.py   # Audio playback (mpg123)
 │   ├── motor_controller.py # Stepper motor control
 │   └── stepper_28byj.py  # 28BYJ-48 stepper driver
-├── mqtt/                 # MQTT communication module
+├── mqtt/                 # MQTT communication module (Pi/external integration)
 │   ├── pi_mqtt_app.py    # Raspberry Pi MQTT broker/client
 │   └── __init__.py
 └── README.md             # This file
@@ -81,6 +87,8 @@ Converts text responses into spoken audio and synchronizes robot motor movements
 - 28BYJ-48 stepper motors with ULN2003 drivers
 - `mpg123` for audio playback
 
+See [`t2s1/README.md`](t2s1/README.md) for setup and hardware notes.
+
 ### 4. MQTT Communication (`mqtt/`)
 
 Enables real-time bidirectional communication between the Raspberry Pi and external systems (e.g., Unreal Engine).
@@ -94,6 +102,22 @@ Enables real-time bidirectional communication between the Raspberry Pi and exter
 **Topics:**
 - `siggraph/pi/state`: Pi → External systems (state updates)
 - `siggraph/pi/commands`: External systems → Pi (commands)
+
+### 5. End-to-end pipeline (`s2t-llm-t2s/`)
+
+A single orchestrator that chains:
+
+1. Speech-to-text (microphone input)
+2. Local LLM (Ollama via the `llm-app` client)
+3. Text-to-speech output (robot TTS system)
+
+See [`s2t-llm-t2s/README.md`](s2t-llm-t2s/README.md).
+
+### 6. Web UI MQTT demo (`s2t-llm-t2s/mqtt_demo/`)
+
+A minimal, self-contained demo that publishes LLM text to an MQTT topic and renders it live in a webpage via MQTT-over-WebSockets.
+
+See [`s2t-llm-t2s/mqtt_demo/README.md`](s2t-llm-t2s/mqtt_demo/README.md).
 
 ## Prerequisites
 
@@ -125,7 +149,16 @@ Enables real-time bidirectional communication between the Raspberry Pi and exter
 
 ## Quick Start
 
-### 1. Set Up Speech-to-Text
+### Option A: Run the end-to-end orchestrator
+
+```bash
+cd s2t-llm-t2s
+python main.py
+```
+
+### Option B: Run the standalone components
+
+#### 1) Speech-to-Text
 
 ```bash
 cd s2t1
@@ -140,7 +173,7 @@ python app.py
 python offline_app.py
 ```
 
-### 2. Set Up LLM Client
+#### 2) LLM client
 
 ```bash
 cd llm-app
@@ -150,30 +183,44 @@ pip install -r requirements.txt
 python app.py --prompt "Hello, how are you?"
 ```
 
-### 3. Set Up Text-to-Speech (on Raspberry Pi)
+#### 3) Text-to-Speech (on Raspberry Pi)
 
 ```bash
 cd t2s1
 pip install gtts
-sudo apt-get install mpg123  # On Raspberry Pi
+sudo apt-get install mpg123
 
 # Run in simulation mode (no hardware)
 python robot_speech.py
 ```
 
-### 4. Set Up MQTT Communication
+#### 4) MQTT communication (Pi/external integration)
 
 ```bash
-# Install Mosquitto broker (on Raspberry Pi)
 sudo apt-get install mosquitto mosquitto-clients
-
-# Install Python MQTT client
 pip install paho-mqtt
 
-# Run the MQTT app
 cd mqtt
 python3 pi_mqtt_app.py
 ```
+
+### Option C: Run the MQTT-to-webpage demo
+
+```bash
+cd s2t-llm-t2s/mqtt_demo
+
+# broker with websockets
+mosquitto -c mosquitto.conf -v
+
+# in another terminal: publisher
+python3 -m pip install paho-mqtt
+python3 publisher.py
+
+# in another terminal: serve webpage
+python3 -m http.server 8080 --directory web
+```
+
+Then open: `http://localhost:8080/`.
 
 ## Integration Workflow
 
@@ -188,8 +235,7 @@ A typical interaction flow:
 
 - The `t2s1/` module can run in simulation mode (`motor_enabled=False`) for development without hardware
 - MQTT topics and message formats are defined in `mqtt/pi_mqtt_app.py`
-- Each component can be developed and tested independently
-- See individual component READMEs for detailed documentation
+- The end-to-end pipeline lives in `s2t-llm-t2s/main.py` and vendors copies of `s2t1/`, `llm-app/`, and `t2s1/` for convenience
 
 ## License
 
@@ -198,7 +244,3 @@ This repository is part of the Lafufu Twin research project for SIGGRAPH Asia.
 ## Contributing
 
 This is a research project repository. For questions or contributions, please refer to the project maintainers.
-
----
-
-For detailed documentation on each component, please refer to the README files in each subdirectory.
